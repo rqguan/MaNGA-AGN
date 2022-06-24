@@ -4,6 +4,8 @@
 # In[4]:
 
 
+from cgi import test
+from tkinter import EW
 import numpy as np
 import cv2
 import scipy as scipy
@@ -11,6 +13,7 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 import polarTransform
 from marvin.tools import Maps
+from scipy.fft import fft
 from scipy.stats import wasserstein_distance
 
 
@@ -36,7 +39,7 @@ def normalize(arr, t_min = 0, t_max = 1):
     return norm_arr
 
 
-def generate_profile_histogram(plateifu, method = 'max', smooth = 5):
+def generate_profile_histogram(plateifu, method = 'max', smooth = 10, cycle = 2):
     
     # Input: plateifu
     # method: output array begin with the max or min value in the array
@@ -68,19 +71,24 @@ def generate_profile_histogram(plateifu, method = 'max', smooth = 5):
     EW_SMO = scipy.ndimage.gaussian_filter(EW_CLEAN, sigma = smooth)
 
     # To better identify the feature, plot two cycles of the galaxy
-    EW_SMO_TW = list(np.append(EW_SMO, EW_SMO))
+    EW_SMO_TW = []
+    
+    for i in range(0, cycle+1):
+        EW_SMO_TW = EW_SMO_TW + list(EW_SMO)
+
+    # Plot certain cycles
 
     if method == 'max':
-        # limited the array to exactly one cycle: but from max to max
+        # limited the array to N cycles: but from max to max
         max_index = max(EW_SMO_TW, default = 0) # find max value
         start_index = [i for i, n in enumerate(EW_SMO_TW) if n == max_index][0] # find index of 1st max
-        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == max_index][1] # find index of 2nd max
+        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == max_index][cycle] # find index of 2nd max
         trunc_EW = np.array(EW_SMO_TW[start_index:end_index]) # truncate from 1st to 2nd max
     elif method == 'min':
-        # limited the array to exactly one cycle: but from max to max
+        # limited the array to N cycles: but from max to max
         min_index = min(EW_SMO_TW, default = 0) # find min value
         start_index = [i for i, n in enumerate(EW_SMO_TW) if n == min_index][0] # find index of 1st min
-        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == min_index][1] # find index of 2nd min
+        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == min_index][cycle] # find index of 2nd min
         trunc_EW = np.array(EW_SMO_TW[start_index:end_index]) # truncate from 1st to 2nd min
     else:
         pass
@@ -104,41 +112,21 @@ def generate_profile_histogram(plateifu, method = 'max', smooth = 5):
     return intp_EW, plateifu
 
 
-# In[ ]:
+def fourier_classifier(sample):
+    
+    # Importing data, use 2 cycles(default)
+    test_EW_hist = sample[0]
+    test_plateifu = sample[1]
 
-
-def calculate_maximum(test):
+    # 1. Set curve osillate around  y=0
+    # 2. Take the FT result  from 1~50 because FT saturate at 0. 
+    # Fourier Transform:
+    yf = np.abs(fft(test_EW_hist-0.5)[1:50])
+    yf.sort()
+    loss = sum(np.diff(yf[-4:]))
+  
     
-    # Calculate the loss between the test galaxy and the 17 bicone galaxy
-    
-    test_EW_hist = test[0]
-    test_plateifu = test[1]
-    
-    # Load examples
-    BC_PATH = '/Users/runquanguan/Documents/Research/MaNGA-AGN/Pipeline&Instrction/obvious_bicone_feature_position.fits'
-    FOLDER = '/Users/runquanguan/Documents/Research/MaNGA-AGN/Data/'
-    
-    hdul = fits.open(BC_PATH)
-    hdu = hdul[1].data
-    
-    total_loss = []
-    for data in hdu:
-        plateifu = str(data[0])
-        FILENAME = 'manga-' + plateifu + '-MAPS-SPX-MILESHC-MASTARSSP.fits'
-        FILE_PATH = FOLDER+FILENAME
-        # Define arrays
-        BC_EW_hist = generate_profile_histogram(FILE_PATH)[0]
-
-        # Find the loss using Earth Moving Distance
-        loss = wasserstein_distance(test_EW_hist, BC_EW_hist)
-        total_loss.append(loss)
-    
-    if test_plateifu in hdu['PLATEIFU']:
-        final_loss = sum(total_loss)/(hdu.shape[0]-1)
-    else:
-        final_loss = sum(total_loss)/hdu.shape[0]
-        
-    return final_loss
+    return loss, test_plateifu
     
     
     
