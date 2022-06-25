@@ -26,7 +26,7 @@ Here's the goal of this project:
         
         a. Set galaxy center as the polar origin.
     
-    2. Integrate OIII EW flux along R directoin, which is Y direction on the Cartesian coordinat, into an array.
+    2. Integrate OIII EW flux along R direction, which is Y direction on the Cartesian coordinat, into an array.
     
         a. The array show as a curve, showing the integrated EW flux along R diredction. 
         b. 3-sigma outliers need to be eliminated before the intergration because some values are too absurd. 
