@@ -4,8 +4,10 @@
 
 Here's the goal of this project:
 
-（1）input the full sample ([OIII] EQW maps in our case), and the code will help to classify the galaxies into different classes.
-（2）training the code with bicone galaxies, then tell the code to find similar ones.
+
+    1. input the full sample ([OIII] EQW maps in our case), and the code will help to classify the galaxies into different classes.
+
+    2. training the code with bicone galaxies, then tell the code to find similar ones.
 
 
 ## Part One: Bicone Feature Selection
