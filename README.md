@@ -22,7 +22,7 @@ Here's the goal of this project:
   
   Proposed Prosedure:
   
-    1. Transform the galaxy image into a polar coordinate.
+    1. Transform the galaxy image into polar coordinate.
     
     2. Stack the galaxy into one histogram.
     
