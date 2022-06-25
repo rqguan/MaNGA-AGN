@@ -37,28 +37,28 @@ Here's the goal of this project:
             i. 5 each on left and right.
         b. After this step, I tried to use earth-moving distance to directly compare the curves but failed. 
             i. Meant to compare between curves, taking the mean of the 17 samples then compare to each in the dataset. 
-        c. It turned out that moving a similar but out-of-phase curve is the same a moving a really noisy curve
+        c. It turned out that moving a similar but out-of-phase curve is similar to moving a really noisy curve
         
     4. Fourier Transform the curve and find the strongest frequency.
     
         a. The bicone structure occures twice a cycle. 
-        b. With 2 cycles of daya in a curve, the strongest frenquency should be 2 Hz (index 4 in data), assuming the bicone is strong.   
+        b. With 2 cycles of data in a curve, the strongest frenquency should be 2 Hz (index 4 in data), assuming the bicone is strong.   
         ---- [1st Filter] ----
         
             i. Origin value of the curve need to be set to 0 to avoid saturates the FT @ x=0
             ii. Therefore normalization and minimum value aligned to the origin are required
             
-        c. Frequenct above 50Hz makes no sense so they are truncated. 
-        d. The difference between the first 4 strongest frequency shall be large, as the sample suggest.                                
+        c. Frequency above 50Hz makes no sense so they are truncated. 
+        d. The difference between the first 4 strongest frequency shall be large, as the 17 samples suggest.                                
         ---- [2nd Filter] ----
-        e. Frequency of 1 Hz and 3 Hz are allowed but has to be weaker than 2 Hz, we use the sample to limit an empiracle value.     
+        e. Frequency of 1 Hz and 3 Hz are allowed but has to be weaker than the 2 Hz peak, we use the sample to limit to an empiracle value.     
         ---- [3rd Filter] ----
         f. During thr process, spacial features are integrated into a radial curve, therefore lost. 
         
     5. Addressing to the lost of spacial data.
     
         a. Try to do a FT to the r=0R~0.5R as well as r=0.5R~R.
-            i. Thus we can eliminate the ones only has two outer bright dots instead of "bicone"
-            ii. But dubiously bicones would be washed out. 
+            i. Thus we can eliminate the ones only have two outer bright dots instead of a continuous "bicone" though out the R direction.
+            ii. Downside is that not-so-obvious bicones would be washed out. 
     
     
