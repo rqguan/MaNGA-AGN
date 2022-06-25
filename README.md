@@ -26,14 +26,17 @@ Here's the goal of this project:
     4. Fourier Transform the curve and find the strongest frequency.
     
         a. The bicone structure occures twice a cycle. 
-        b. With 2 cycles of daya in a curve, the strongest frenquency should be 4 Hz (index 4 in data), assuming the bicone is strong.   [1st Filter]
+        b. With 2 cycles of daya in a curve, the strongest frenquency should be 4 Hz (index 4 in data), assuming the bicone is strong.   
+        ## [1st Filter]
         
             i. Origin value of the curve need to be set to 0 to avoid saturates the FT @ x=0
             ii. Therefore normalization and minimum value aligned to the origin are required
             
         c. Frequenct above 50Hz makes no sense so they are truncated. 
-        d. The difference between the first 4 strongest frequency shall be large, as the sample suggest.                                 [2nd Filter]
-        e. Frequency of 1 Hz and 5 Hz are allowed but has to be weaker than 2 Hz, we use the sample to give an empiracle parameter.      [3rd Filter]
+        d. The difference between the first 4 strongest frequency shall be large, as the sample suggest.                                
+        ## [2nd Filter]
+        e. Frequency of 1 Hz and 5 Hz are allowed but has to be weaker than 2 Hz, we use the sample to give an empiracle parameter.     
+        ## [3rd Filter]
         f. During thr process, spacial features are integrated into a radial curve, therefore lost. 
         
     5. Address to the lost of spacial data.
