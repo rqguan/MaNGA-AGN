@@ -11,8 +11,8 @@ Here's the goal of this project:
     
 ## General Properties of this pipeline
 
-    1. The complete MaNGA dataset contains 10782 MAPS file is ~250GB.
-    2. My macbook hard drive only has 500GB so I am using SDSS-MARVIN server. 
+    1. The complete MaNGA dataset containing 10782 MAPS file is ~250GB.
+    2. My Macbook's hard drive is 500GB, with only 300GB left, so I am using SDSS-MARVIN server throught the process. 
     3. 44 galaxies' MAPS file are missing in the dataset: MARVIN response 404 for both downloading and loading.
     4. Some MAPS files contains arrays of 0s, the ifu is pointing nowhere. 
     5. The problems above are well-addressed in the pipeline. 
