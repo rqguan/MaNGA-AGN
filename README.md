@@ -39,7 +39,7 @@ Here's the goal of this project:
         ## [3rd Filter]
         f. During thr process, spacial features are integrated into a radial curve, therefore lost. 
         
-    5. Address to the lost of spacial data.
+    5. Addressing to the lost of spacial data.
     
         a. Try to do a FT to the r=0R~0.5R as well as r=0.5R~R.
             i. Thus we can eliminate the ones only has two outer bright dots instead of "bicone"
