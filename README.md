@@ -8,6 +8,14 @@ Here's the goal of this project:
     1. input the full sample ([OIII] EQW maps in our case), and the code will help to classify the galaxies into different classes.
 
     2. training the code with bicone galaxies, then tell the code to find similar ones.
+    
+## General Properties of this pipeline
+
+    1. The data set contains 10782 MAPS file is ~250GB.
+    2. My macbook hard drive only has 500GB so I am using SDSS-MARVIN server. 
+    3. 44 galaxies' MAPS file are missing in the dataset: MARVIN response 404 for both downloading and loading.
+    4. Some MAPS files contains arrays of 0s, the ifu is pointing nowhere. 
+    5. The problems above are well-addressed in the pipeline. 
 
 
 ## Part One: Bicone Feature Selection
