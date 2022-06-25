@@ -22,14 +22,22 @@ Here's the goal of this project:
   
   Proposed Prosedure:
   
-    1. Transform the galaxy image into polar coordinate.
+    1. Transform the galaxy image from polar coordinate to Cartesian coordinate.
+        
+        a. Set galaxy center as the polar origin.
     
-    2. Stack the galaxy into one histogram.
+    2. Integrate OIII EW flux along R directoin, which is Y direction on the Cartesian coordinat, into an array.
     
-    3. Eliminate any data outlier and smoothening the curve.
+        a. The array show as a curve, showing the integrated EW flux along R diredction. 
+        b. 3-sigma outliers need to be eliminated before the intergration because some values are too absurd. 
     
-        a. After that I tried to use earth-moving distance to directly compare the curves but failed. 
-        b. It turned out that moving a similar but out-of-phase curve is the same a moving a really noisy curve
+    3. Smoothening the curve.
+    
+        a. Use Gaussian Smoothening, set the smoothness to 10, meaning x = average of 10 near neighbors.
+            i. 5 each on left and right.
+        b. After this step, I tried to use earth-moving distance to directly compare the curves but failed. 
+            i. Meant to compare between curves, taking the mean of the 17 samples then compare to each in the dataset. 
+        c. It turned out that moving a similar but out-of-phase curve is the same a moving a really noisy curve
         
     4. Fourier Transform the curve and find the strongest frequency.
     
