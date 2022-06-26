@@ -60,5 +60,9 @@ Here's the goal of this project:
         a. Try to do a FT to the r=0R~0.5R as well as r=0.5R~R.
             i. Thus we can eliminate the ones only have two outer bright dots instead of a continuous "bicone" though out the R direction.
             ii. Downside is that not-so-obvious bicones would be washed out. 
+            iii. Turned out the method does not differentiate between bicone and ellipticity. 
+            iv. Try to extract the elliptical edge instead
+        b. Integrate the flux along the ellipse of the ellipticity and position angle.
+        
     
     
