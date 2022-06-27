@@ -69,6 +69,11 @@ Here's the goal of this project:
             i. The pipeline works, but the filter isn't effective. 
             ii. Still too strict or too tolerance problem. 
             iii. may need to take BTP into consideration. 
-        
+            
+        c. Before taking BTP into the account, print the elliptic ring FT in the range of (0.2, 1.6, 8).
+           testing if the spacial feature would be conserved. 
+           
+            i. looks good but each item not taks >9s, causing the whole time >4days. 
+         
     
     
