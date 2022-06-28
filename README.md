@@ -74,6 +74,12 @@ Here's the goal of this project:
            testing if the spacial feature would be conserved. 
            
             i. looks good but each item now takes >9s, causing the whole iterate time >4days. 
+            ii. But through some techniques, I reduced the runtime to ~3s/item.
+            iii. The result looks promising. 
+          
+         d. After repetitive testing, found the ideal range is np.linspace(0.6, 2, 8)[re_r], when the sum of loss < 220
+         
+         
          
     
     
