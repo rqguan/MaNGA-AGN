@@ -3,19 +3,20 @@
 
 # In[4]:
 
-
-from cgi import test
-from curses import termattrs
-from tkinter import EW
-import numpy as np
 import cv2
+import copy
+
+import numpy as np
 import scipy as scipy
+
 import matplotlib.pyplot as plt
 from astropy.io import fits
-import polarTransform
-from marvin.tools import Maps
+
 from scipy.fft import fft
 from scipy.stats import wasserstein_distance
+
+import polarTransform
+from marvin.tools import Maps
 
 
 # For later use:
@@ -126,33 +127,15 @@ def polar_EW(plateifu, ring = False, method = None , smooth = 10, cycle = 2):
     return intp_EW
 
 
-def fourier_classifier(EW_curve, peak_n = 5):
-    
-    # 1. Set curve osillate around  y=0
-    # 2. Take the FT result  from 1~50 because FT saturate at 0. 
-    # Fourier Transform:
-
-    yf = np.abs(fft(EW_curve)[1:30])
-    peak_value = max(yf)
-    peak_index = list(yf).index(peak_value)
-    
-    n_index = peak_n * -1
-
-    yf.sort()
-    loss = sum(np.diff(yf[n_index:]))
-  
-    
-    return peak_index, loss
 
 
 
-def ellip_ring_ew(plateifu, in_r = 0.9, out_r = 1.1, method = None , sig = 5, smooth = 1, cycle = 1):
+def ellip_gen(plateifu):
 
     maps = Maps(plateifu, bintype='SPX', template='MILESHC-MASTARSSP')
     oiii_ew = maps.emline_gew_oiii_5008.value
 
     # Ellipticity Properties
-    r = maps.spx_ellcoo_elliptical_radius.value.round(decimals=2)
     phi = maps.spx_ellcoo_elliptical_azimuth.value.round(decimals=2)
     r_re = maps.spx_ellcoo_r_re.value
     
@@ -161,78 +144,84 @@ def ellip_ring_ew(plateifu, in_r = 0.9, out_r = 1.1, method = None , sig = 5, sm
     ew_r_comb = np.array((oiii_ew, r_re)) 
     #Tanspose the array to make each element in form of (EW, phi_er)
 
-    # Make out of range data = 0, then output the EW only
-    for i in  ew_r_comb.T :
+    return ew_r_comb, phi
+
+def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth = 1):
+
+    ring = copy.deepcopy(ellip)
+
+    # Inherent the output of the ellip_gen function
+    ew_re_comb = ring[0]
+    theta = ring[1]
+    
+
+    # Make non-ring data = 0, then output the EW only
+    # First sort the data as pairs of (oiii, r_er) 
+    for i in  ew_re_comb.T :
+        # j is the r_er
         for j in i:
+            # set zeros outside of the range 
             if j[1] < in_r or j[1] > out_r:
                 j[0] = 0
             else:
                 pass
 
     # Output: zeros except for Ring of EW
-    # Actually we only cares about the EW distribution along the phi direction
+
+    # From now on, we only care about the EW distribution along the phi direction
     # So we 
     # 1. make a tuple in the format of (phi, EW).
-    # 2. delete 0 EW elements.
+    # 2. Select non-zero EW elements.
     # 3. Interpolate the phi vs. EW to 500
     # 4. make the curve EW curve plot
 
-
-    phi_EW = np.array((phi, ew_r_comb[0]))
+    # Sort the data as pairs of (phi), (oiii) 
+    theta_EW = np.array((theta, ew_re_comb[0]))
 
     EW_stacked = []
-    for i in phi_EW.T:
+ 
+    # Sort the data as pairs of (phi, oiii) 
+    for i in theta_EW.T:
+        # j[1] would be the oiii
         for j in i:
             if j[1] != 0:
                 EW_stacked.append(j)
             else:
                 pass
-        
+    
+    # Turn the list to array
     EW_curve = np.array(EW_stacked)
 
-    # Sort the EW along phi direction
-    EW_sort = EW_curve[EW_curve[:, 0].argsort()]
+    if len(EW_curve) != 0:
+        # Sort the EW along phi direction
+        EW_sort = EW_curve[EW_curve[:, 0].argsort()]
 
-    EW_COL = EW_sort.T[1]
-    
-    # Exclude outlier using 3-sigma variant
-    mean = np.mean(EW_COL)
-    sd = np.std(EW_COL)
-    EW_CLEAN = [x for x in EW_COL if (x >= mean - sig * sd)]
-    EW_CLEAN = [x for x in EW_CLEAN if (x <= mean + sig * sd)]
-    # Smoothening the curve using Gaussian filter
-    EW_SMO = scipy.ndimage.gaussian_filter(EW_CLEAN, sigma = smooth)
+        # Save the oiii result only
+        EW_COL = EW_sort.T[1]
+        
+        # Exclude outlier using 3-sigma variant
+        mean = np.mean(EW_COL)
+        sd = np.std(EW_COL)
+        EW_CLEAN = [x for x in EW_COL if (x >= mean - sig * sd)]
+        EW_CLEAN = [x for x in EW_CLEAN if (x <= mean + sig * sd)]
+        # Smoothening the curve using Gaussian filter
+        EW_SMO = scipy.ndimage.gaussian_filter(EW_CLEAN, sigma = smooth)
 
-    # To better identify the feature, plot two cycles of the galaxy
-    EW_SMO_TW = []
-    
-    for i in range(0, cycle):
-        EW_SMO_TW = EW_SMO_TW + list(EW_SMO)
-
-    # Plot certain cycles
-
-    if method == 'max':
-        # limited the array to N cycles: but from max to max
-        max_index = max(EW_SMO_TW, default = 0) # find max value
-        start_index = [i for i, n in enumerate(EW_SMO_TW) if n == max_index][0] # find index of 1st max
-        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == max_index][cycle] # find index of 2nd max
-        trunc_EW = np.array(EW_SMO_TW[start_index:end_index]) # truncate from 1st to 2nd max
-    elif method == 'min':
-        # limited the array to N cycles: but from max to max
-        min_index = min(EW_SMO_TW, default = 0) # find min value
-        start_index = [i for i, n in enumerate(EW_SMO_TW) if n == min_index][0] # find index of 1st min
-        end_index = [i for i, n in enumerate(EW_SMO_TW) if n == min_index][cycle] # find index of 2nd min
-        trunc_EW = np.array(EW_SMO_TW[start_index:end_index]) # truncate from 1st to 2nd min
+        # To better identify the feature, plot n cycles of the galaxy
+        EW_SMO_TW = []
+        
+        for i in range(0, cycle):
+            EW_SMO_TW = EW_SMO_TW + list(EW_SMO)
     else:
-        trunc_EW = EW_SMO_TW
-    
+        EW_SMO_TW = np.linspace(0,200,200)
+        
     # Correct the 0 data error first:
-    if len(trunc_EW) <= 4:
-        trunc_EW = np.linspace(0,200,200)
+    if len(EW_SMO_TW) <= 4:
+        EW_SMO_TW = np.linspace(0,200,200)
     else:
         pass
     # Normalization 
-    norm_EW = normalize(trunc_EW)
+    norm_EW = normalize(EW_SMO_TW)
     
     # Make them all to the same length through interpolation
     x = np.linspace(0,len(norm_EW),len(norm_EW))
@@ -242,4 +231,26 @@ def ellip_ring_ew(plateifu, in_r = 0.9, out_r = 1.1, method = None , sig = 5, sm
     intp_EW = f_linear(x2)
         
     
-    return intp_EW, plateifu
+    return intp_EW
+
+
+def fourier_classifier(EW_curve, peak_n = 5):
+    
+    # 1. Set curve osillate around  y=0
+    # 2. Take the FT result  from 1~50 because FT saturate at 0. 
+    # Fourier Transform:
+    curve = copy.deepcopy(EW_curve)
+    
+    yf = np.abs(fft(curve)[1:30])
+
+    output_y = copy.deepcopy(yf)
+
+    peak_value = max(yf)
+    peak_index = list(yf).index(peak_value)
+    
+    n_index = peak_n * -1
+
+    yf.sort()
+    loss = sum(np.diff(yf[n_index:]))
+    
+    return output_y, peak_index, loss
