@@ -85,5 +85,74 @@ Here's the goal of this project:
             i. There are still face-on galaxies remain on the list. 
          
          
+         
+Result:
+
+The output consist of two fits files:
+    bicone_candidates_Full_v3.fits
+    bicone_candidates_Full_v5.fits
     
+    a. bicone_candidates_Full_v3.fits:
+    
+        Filtered from DAPALL list: 10782 (Before) to 1112 (After) galaxies. 
+        
+        Procedure: 
+        
+        result_list
+        ellip = Bicone_Classifier.ellip_gen(plateifu)
+        loss_list = []
+        for i in np.linspace(0.6, 2, 8):
+            start, end = round(i,1), round(i,1)+0.3
+            curve = Bicone_Classifier.ellip_ring_curve(ellip, in_r = start, out_r = end, cycle = 2)
+            result = Bicone_Classifier.fourier_classifier(curve)
+            if result[1] == 3:
+                loss_list.append(result[2])
+            else:
+                loss_list.append(np.array([0]))
+        if sum(loss_list) >= 220:
+            result_list.append(data)
+            index_list.append(sum(loss_list)) 
+            
+        
+        Parameter: Probability = loss / max(loss_list)
+        Note: 45 missed galaxies: MARVIN 404. 
+        
+    b. bicone_candidates_Full_v5.fits:
+    
+        Filtered from bicone_candidates_Full_v3.fits: 1112 (Before) to 501 (After) galaxies. 
+        
+        Procedure:
+        
+        axis_list = []
+        axis_index = []
+        miss_list = []
+
+        for data in hdu: # data = plateifu
+            try:
+                ellip = Bicone_Classifier.ellip_gen(data)
+                axis_loss = []
+                for i in np.linspace(0.6, 2, 8):
+                    start, end = round(i,1), round(i,1)+0.3
+                    curve = Bicone_Classifier.ellip_ring_curve(ellip, in_r = start, out_r = end, cycle = 2)
+                    result = Bicone_Classifier.fourier_classifier(curve)
+
+                    # Find the difference between max_index and the nearest phase 
+                    residue = (720*(result[3]/500))-90 # to 360*2 angle, diff to zero, positive 
+                    loop_residue = min([residue%180, abs(residue-180)])
+                    abs_residue = min([loop_residue%180, abs(loop_residue-180)])
+                    axis_loss.append(abs_residue)
+
+                total_axis_loss = sum(axis_loss)
+
+                if total_axis_loss <= 225:
+                    axis_list.append(data)
+                    axis_index.append(total_axis_loss)
+                else:
+                    pass
+            except:
+                miss_list.append(data)
+                
+          Parameter: DEGREE_SIG: Bicone angle to the nearest mionr axis angle, in degree. 
+          Note: No missing galaxies. 
+        
     
