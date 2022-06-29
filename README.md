@@ -117,7 +117,7 @@ The output consist of two fits files:
             
         
         Parameter: Probability = loss / max(loss_list)
-        Note: 45 missed galaxies: MARVIN 404. 
+        Note: 45 missed galaxies: MARVIN 404. (see bicone_miss.fits)
         
     b. bicone_candidates_Full_v5.fits:
     
@@ -157,4 +157,7 @@ The output consist of two fits files:
           Parameter: DEGREE_SIG: Bicone angle to the nearest mionr axis angle, in degree. 
           Note: No missing galaxies. 
         
+    c. test_v1.fits:
     
+        Filtered through TOPCAT, select 150 mostly likely galaxies, with high probability and low degree_sig. 
+        
