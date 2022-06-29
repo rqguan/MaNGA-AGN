@@ -89,7 +89,9 @@ Here's the goal of this project:
 Result:
 
 The output consist of two fits files:
+
     bicone_candidates_Full_v3.fits
+    
     bicone_candidates_Full_v5.fits
     
     a. bicone_candidates_Full_v3.fits:
