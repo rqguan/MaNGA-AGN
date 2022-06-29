@@ -79,6 +79,10 @@ Here's the goal of this project:
           
          d. After repetitive testing, found the ideal range is np.linspace(0.6, 2, 8)[re_r], when the sum of loss < 220
          
+    6. Bicone axis allignment.
+    
+         a. The bicone should point to the minor axis
+         
          
          
     
