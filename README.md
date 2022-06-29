@@ -90,9 +90,9 @@ Here's the goal of this project:
 
 ### The output consist of two fits files:
 
-    ### bicone_candidates_Full_v3.fits
+bicone_candidates_Full_v3.fits
     
-    ### bicone_candidates_Full_v5.fits
+bicone_candidates_Full_v5.fits
     
     a. bicone_candidates_Full_v3.fits:
     
@@ -157,7 +157,7 @@ Here's the goal of this project:
           Parameter: DEGREE_SIG: Bicone angle to the nearest mionr axis angle, in degree. 
           Note: No missing galaxies. 
         
-    c. test_v1.fits:
+    c. additional test_v1.fits:
     
         Filtered through TOPCAT, select 150 mostly likely galaxies, with high probability and low degree_sig. 
         
