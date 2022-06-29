@@ -82,7 +82,7 @@ Here's the goal of this project:
     6. Bicone axis allignment.
     
          a. The bicone should point to the minor axis
-         
+            i. There are still face-on galaxies remain on the list. 
          
          
     
