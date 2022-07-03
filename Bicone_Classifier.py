@@ -3,6 +3,7 @@
 
 # In[4]:
 
+from doctest import NORMALIZE_WHITESPACE
 import cv2
 import copy
 
@@ -130,7 +131,7 @@ def polar_EW(plateifu, ring = False, method = None , smooth = 10, cycle = 2):
 
 
 
-def ellip_gen(plateifu):
+def ellip_gen(plateifu = '7443-1902'):
 
     maps = Maps(plateifu, bintype='SPX', template='MILESHC-MASTARSSP')
     oiii_ew = maps.emline_gew_oiii_5008.value
@@ -146,7 +147,7 @@ def ellip_gen(plateifu):
 
     return ew_r_comb, phi
 
-def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth = 1):
+def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth = 3):
 
     ring = copy.deepcopy(ellip)
 
@@ -192,7 +193,9 @@ def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth 
     # Turn the list to array
     EW_curve = np.array(EW_stacked)
 
-    if len(EW_curve) != 0:
+
+    # In case of 0 array data
+    if len(EW_curve) >= 4:
         # Sort the EW along phi direction
         EW_sort = EW_curve[EW_curve[:, 0].argsort()]
 
@@ -204,29 +207,32 @@ def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth 
         sd = np.std(EW_COL)
         EW_CLEAN = [x for x in EW_COL if (x >= mean - sig * sd)]
         EW_CLEAN = [x for x in EW_CLEAN if (x <= mean + sig * sd)]
-        # Smoothening the curve using Gaussian filter
-        EW_SMO = scipy.ndimage.gaussian_filter(EW_CLEAN, sigma = smooth)
 
+        # Reinforce the asymmetric bicone by normalizing half sides
+         # Normalization 
+        mid_pt = round(len(EW_CLEAN)/2)
+
+        norm_A = normalize(EW_CLEAN[0:mid_pt])
+        norm_B = normalize(EW_CLEAN[mid_pt:])
+        norm_EW = np.concatenate((norm_A, norm_B))
+        
         # To better identify the feature, plot n cycles of the galaxy
-        EW_SMO_TW = []
+        EW_CLEAN_N = []
         
         for i in range(0, cycle):
-            EW_SMO_TW = EW_SMO_TW + list(EW_SMO)
+            EW_CLEAN_N = EW_CLEAN_N + list(norm_EW)
+
+        # Smoothening the curve using Gaussian filter
+        EW_SMO = scipy.ndimage.gaussian_filter(EW_CLEAN_N, sigma = smooth)
+
     else:
-        EW_SMO_TW = np.linspace(0,200,200)
+        EW_SMO = np.linspace(0,1,100)
         
-    # Correct the 0 data error first:
-    if len(EW_SMO_TW) <= 4:
-        EW_SMO_TW = np.linspace(0,200,200)
-    else:
-        pass
-    # Normalization 
-    norm_EW = normalize(EW_SMO_TW)
     
     # Make them all to the same length through interpolation
-    x = np.linspace(0,len(norm_EW),len(norm_EW))
-    y = norm_EW
-    x2 = np.linspace(0,len(norm_EW),500)
+    x = np.linspace(0,len(EW_SMO),len(EW_SMO))
+    y = EW_SMO
+    x2 = np.linspace(0,len(EW_SMO),360*cycle)
     f_linear = scipy.interpolate.interp1d(x, y)
     intp_EW = f_linear(x2)
         
@@ -234,23 +240,36 @@ def ellip_ring_curve(ellip, in_r = 0.9, out_r = 1.1, sig = 5, cycle = 1, smooth 
     return intp_EW
 
 
-def fourier_classifier(EW_curve, peak_n = 5):
+def fourier_classifier(EW_curve, n_peak = 5):
     
     # 1. Set curve osillate around  y=0
     # 2. Take the FT result  from 1~50 because FT saturate at 0. 
     # Fourier Transform:
     curve = copy.deepcopy(EW_curve)
     
+    # Max on the curve
+    max_value = curve.max()
+    max_index = list(curve).index(max_value)
+    
     yf = np.abs(fft(curve)[1:30])
 
     output_y = copy.deepcopy(yf)
 
+    # Strongest frequency
     peak_value = max(yf)
     peak_index = list(yf).index(peak_value)
     
-    n_index = peak_n * -1
+    four_intensity = yf[3]
+    ten_intensity = sum([yf[5], yf[7], yf[9]])
+
+    residue = (max_index)-90 # to 360*2 angle, diff to zero, positive
+    loop_residue = min([residue%180, abs(residue-180)])
+    abs_residue = min([loop_residue%180, abs(loop_residue-180)])
+
+    n_index = n_peak * -1
 
     yf.sort()
     loss = sum(np.diff(yf[n_index:]))
+ 
     
-    return output_y, peak_index, loss
+    return output_y, (max_index, peak_index) , loss, (four_intensity, ten_intensity), abs_residue
