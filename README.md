@@ -161,3 +161,11 @@ bicone_candidates_Full_v5.fits
     
         Filtered through TOPCAT, select 150 mostly likely galaxies, with high probability and low degree_sig. 
         
+## Part One Comment:
+
+    1. The list we have still missed asymmetric bicone featured galaxies. 
+    2. Plus the pipeline is missing galaxies fits our criteria. 
+    
+    A new pipeline addressing to problem 1 is deployed and updated to git. while it widened the range to ~1700 galaxies.(see new_v1.fits)
+    
+    Need to work on the missing sample problem. 
