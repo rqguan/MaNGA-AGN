@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from matplotlib.pyplot import cm
 
 
+import math
+import scipy.stats as stats
 from scipy.fft import fft
 #from scipy.stats import wasserstein_distance
 from scipy import ndimage
@@ -20,9 +22,11 @@ from marvin.tools import Maps
 from marvin.tools.image import Image
 from marvin.utils.general.images import showImage
 
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+from matplotlib.colors import ListedColormap
 
 from matplotlib.font_manager import FontProperties
+
+from hyperopt import hp, fmin, tpe, space_eval
 
 font = FontProperties()
 font.set_family('serif')
@@ -375,6 +379,24 @@ def fourier_classifier(EW_curve, n_peak = 5):
     
     return output_y, (max_index, peak_index) , loss, (four_intensity, ten_intensity), local_residue_l
 
+def deriv_classifier(EW_curve):
+# 1. Take the derivative of the curve.
+# 2. Compare the avg of 0-90, 90-180, 180-270, 270-360
+# 3. Find relation eg: equality, similarity. 
+    fir_deriv = []
+
+    for i in np.linspace(0,70,71):
+        j = int(i)
+        diff = EW_curve[j+1] - EW_curve[j]
+        fir_deriv.append(diff)
+
+    a1 = sum(fir_deriv[0:17])
+    a2 = sum(fir_deriv[18:35])
+    a3 = sum(fir_deriv[36:53])
+    a4 = sum(fir_deriv[54:71])
+
+    return fir_deriv, [a1, a2, a3, a4]
+        
 def plot_compared(data, snr = 3, save = True):
     # Plot Image, OIII, Star_v, Gas_v, Curve, FFT. 
     # in a 3X2 subplots
@@ -550,8 +572,8 @@ def plot_compared(data, snr = 3, save = True):
     fig.set_figheight(20)
     fig.set_figwidth(20)
     plt.title("OIII EW dR", fontproperties=font)
-    plt.xlabel('degree', fontproperties=font)
-    plt.ylabel('EW/spaxel', fontproperties=font)
+    plt.xlabel('Angular Direction [Degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
     plt.plot(intp_EW)
     bound = [75, 105, 255, 285]#, 435, 465, 615, 645]
     for xc in bound:
@@ -635,13 +657,13 @@ def integr_visual(data, snr = 3, save = True):
         for j in range(ew_col):
             if np.isnan(angle_integral[i][j]) == False:
                 if phi[i][j]%20<=5:
-                    angle_integral[i][j] = mask_value + 1
+                    angle_integral[i][j] = mask_value + 5
                 elif phi[i][j]%20<=10:
-                    angle_integral[i][j] = mask_value + 2
+                    angle_integral[i][j] = mask_value + 10
                 elif phi[i][j]%20<=15:
-                    angle_integral[i][j] = mask_value + 3
+                    angle_integral[i][j] = mask_value + 15
                 else:
-                    angle_integral[i][j] = mask_value + 4
+                    angle_integral[i][j] = mask_value + 20
             else:
                 pass
 
@@ -693,7 +715,8 @@ def integr_visual(data, snr = 3, save = True):
     plt.title("5 Degrees Slices", fontproperties=font)
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
-    plt.imshow(np.flipud(angle_integral), cmap = plasma_vis, extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.imshow(np.flipud(angle_integral), cmap = 'plasma', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
 
     # Plot bin value visualization
     fig.add_subplot(rows, columns, 3)
@@ -702,6 +725,7 @@ def integr_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(bin_indica), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
   
 
@@ -713,8 +737,9 @@ def integr_visual(data, snr = 3, save = True):
     plt.xlabel('Angular Direction [degrees]', fontproperties=font)
     plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
     plt.plot(intp_EW, label = 'EW curve')
-    plt.axvline(x = 90, linestyle = '--', color = 'r',label = '90 Degree')
-    plt.axvline(x = 270, linestyle = '--', color = 'r',label = '270 Degree')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.legend(loc='upper right',prop=font)
 
 
@@ -728,11 +753,13 @@ def integr_visual(data, snr = 3, save = True):
     #result = fourier_classifier(intp_EW)[0]
     #x = np.linspace(0.5, 15, 29)
     #plt.plot(x, result)
-    plt.plot(fft(intp_EW)[0:30], label = 'Real Part')
     plt.plot(abs(fft(intp_EW))[0:30], label = 'Absolute Value')
+    plt.plot(np.real(fft(intp_EW))[0:30], label = 'Real Part', alpha =  0.5)
+    plt.plot(np.imag(fft(intp_EW))[0:30], label = 'Imaginary Part', alpha = 0.5)
     bound = [2]
     for xc in bound:
         plt.axvline(x = xc, linestyle = '--', color = 'r', label='2 Hz')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.legend(loc='upper right',prop=font)
 
 
@@ -770,12 +797,13 @@ def mask_visual(data, snr = 3, save = True):
     ew_row = ew_value.shape[0]
     ew_col = ew_value.shape[1]
 
-    phi = maps.spx_ellcoo_elliptical_azimuth.value
+    #phi = maps.spx_ellcoo_elliptical_azimuth.value
 
     x_tik = oiii_ew.shape[0]/4
     y_tik = oiii_ew.shape[1]/4
 
-
+    mean = np.mean(ew_value)
+    sd = np.std(ew_value)
     mask_value = ew_value.min() - 1
 
 
@@ -842,6 +870,7 @@ def mask_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(ew_value), cmap = 'viridis',extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
 
 
@@ -854,6 +883,7 @@ def mask_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(ivar_map), cmap = viridis_vis, extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
 
 
@@ -866,6 +896,7 @@ def mask_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(snr_map), cmap = viridis_vis, extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
 
     
@@ -877,6 +908,7 @@ def mask_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(flag_map), cmap = viridis_vis, extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
  
     
@@ -888,6 +920,7 @@ def mask_visual(data, snr = 3, save = True):
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(comp_map), cmap = viridis_vis, extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
     plt.colorbar(label = r'$\AA$')
 
 
@@ -906,6 +939,350 @@ def mask_visual(data, snr = 3, save = True):
     else:
         plt.show()
 
+def mask_integ_visual(data, snr = 3, save = True):
+    
+    dphi = 5
+
+    fig = plt.figure(figsize=(7, 7))
+    
+    
+    maps = Maps(data, bintype='SPX', template='MILESHC-MASTARSSP')
+
+
+    oiii_ew = maps.emline_gew_oiii_5008
+
+
+    ew_value = oiii_ew.value
+    ew_ivar = oiii_ew.ivar
+    ew_snr = oiii_ew.snr
+    ew_flag = oiii_ew.pixmask.bits
+
+    ew_row = ew_value.shape[0]
+    ew_col = ew_value.shape[1]
+
+    phi = maps.spx_ellcoo_elliptical_azimuth.value
+
+    x_tik = oiii_ew.shape[0]/4
+    y_tik = oiii_ew.shape[1]/4
+
+    #mean = np.mean(ew_value)
+    #sd = np.std(ew_value)
+    mask_value = np.nan
+
+
+    ivar_map = copy.deepcopy(ew_value)   
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                ivar_map[i][j] = mask_value
+            else:
+                pass
+    
+    snr_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_snr[i][j] <= snr:
+                snr_map[i][j] = mask_value
+            else:
+                pass
+
+    flag_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if len(ew_flag[i][j]) != 0:
+                flag_map[i][j] = mask_value
+            else:
+                pass
+
+    comp_map = copy.deepcopy(ew_value)
+
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                comp_map[i][j] = mask_value
+            # exclude S/N < setting
+            elif ew_snr[i][j] <= snr:
+                comp_map[i][j] = mask_value
+            # exclude any flag for spaxel error
+            elif len(ew_flag[i][j]) != 0:
+                comp_map[i][j] = mask_value
+            else:
+                pass
+
+    angle_integral = copy.deepcopy(comp_map)
+
+    # Make the integral angle indicator
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if np.isnan(angle_integral[i][j]) == False:
+                if phi[i][j]%20<=5:
+                    angle_integral[i][j] = 5
+                elif phi[i][j]%20<=10:
+                    angle_integral[i][j] = 10
+                elif phi[i][j]%20<=15:
+                    angle_integral[i][j] = 15
+                else:
+                    angle_integral[i][j] = 20
+            else:
+                pass
+
+    curve = []
+    for k in np.arange(0,360,dphi):
+        bins = []
+        for i in range(ew_row):
+            for j in range(ew_col):
+                if phi[i][j] >= k and \
+                    phi[i][j] <= k+dphi and \
+                    np.isnan(comp_map[i][j]) == False:
+                    bins.append(comp_map[i][j])
+                else:
+                    pass
+        if len(bins) == 0:
+            curve.append(0)
+        else:
+            curve.append(sum(bins)/len(bins))
+
+    x = np.linspace(0,len(curve),len(curve))
+    y = curve
+    x2 = np.linspace(0,len(curve),360)
+    f_linear = scipy.interpolate.interp1d(x, y, kind='linear')
+    intp_EW = f_linear(x2)
+
+
+    rows = 3
+    columns = 3
+    
+    fig.add_subplot(rows, columns, 1)
+    fig.set_figheight(10)
+    fig.set_figwidth(10)
+    plt.title(str(data)+'Image')
+    im = Image(data)
+    # large_mask[large_mask > 0] = 1
+    im = showImage(plateifu = data)
+    plt.xlabel('Spaxel (arcsec)', fontproperties=font)
+    plt.ylabel('Spaxel (arcsec)', fontproperties=font)
+    plt.imshow(im, interpolation='none',extent=[-25,25,-25,25])
+
+
+    # Plot EW full
+    fig.add_subplot(rows, columns, 4)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)  
+    plt.title("Original EW map", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ew_value), cmap = 'viridis',extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot ivar
+    fig.add_subplot(rows, columns, 2)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)     
+    plt.title("ivar=0 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ivar_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot snr
+    fig.add_subplot(rows, columns, 5)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)        
+    plt.title("SNR<3 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(snr_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    
+    # Plot flag
+    fig.add_subplot(rows, columns, 3)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("Flag mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(flag_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+ 
+    
+    # Plot COMP
+    fig.add_subplot(rows, columns, 6)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("3 masks combined", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(comp_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    # Plot angle indicator
+    fig.add_subplot(rows, columns, 7)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("5 Degrees Slices", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(angle_integral), cmap = 'plasma', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+
+    fig.add_subplot(rows, columns, 8)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("OIII EW along Angular Direction", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(intp_EW, label = 'EW curve')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+
+    plt.subplots_adjust(left=0.1,
+                    bottom=0.1, 
+                    right=1.0, 
+                    top=1.2, 
+                    wspace=0.2, 
+                    hspace=0.2)
+    
+
+    if save == True:
+        plt.savefig(data+'_mask_integ_vis.png', bbox_inches='tight')
+        plt.cla()
+        return data
+    else:
+        plt.show()
+
+def triangle_model_loss(data):
+    
+    curve = Simpler_Classifier.simple_integ(data)
+
+    def cone_model(h, left, right, cont):
+
+        if left+right >= 36 or left+right <= 2 or h <= 1:
+            model = np.linspace(0.1,0.1,36)
+
+        else:
+
+            wid = left + right
+            radius = h
+            w_res = math.floor((36-wid)/2)
+            r_var = np.linspace(0,radius,w_res)
+
+            y1 = []
+
+            circ_area = np.pi * (radius**2)
+            for i in r_var:
+
+                l = radius - i
+                angle_rad = np.arccos(l/radius)
+                w = np.sin(angle_rad)*radius
+                triangles = l*w
+
+                angle_res = (np.pi*2) - (angle_rad*2)
+                disc_area = (angle_res/(2*np.pi)) * circ_area
+
+                total_area = circ_area - (disc_area + triangles)
+                y1.append(total_area)
+
+
+            y2 = copy.deepcopy(y1)
+            y1.reverse()
+            y = y2 + y1[1:]
+
+            model = list(np.array(list(np.zeros(left)) + y + list(np.zeros(right))) + cont)
+
+        x = np.linspace(0,len(model),len(model))
+        y = model
+        x2 = np.linspace(0,len(model),36)
+        f_linear = scipy.interpolate.interp1d(x, y, kind='linear')
+        intp_model = f_linear(x2)
+
+        return intp_model
+
+    def loss_function_a(arg):
+
+        h, left, right, cont= arg
+        onecone = cone_model(h,left, right, cont)
+        loss = 0
+        for i in range(36):
+            loss = loss + abs(curve[i]-onecone[i])
+
+        total_loss = loss.item()
+
+        return total_loss
+
+    def loss_function_b(arg):
+
+        h, left, right, cont= arg
+        onecone = cone_model(h,left, right, cont)
+        loss = 0
+        for i in range(36):
+            loss = loss + abs(curve[i+36]-onecone[i])
+
+        total_loss = loss.item()
+
+        return total_loss
+
+    space = [hp.uniform('h',0, 100), hp.randint('left',35), hp.randint('right',35),hp.uniform('cont',0, 3)]
+    best_a = fmin(loss_function_a, space, algo=tpe.suggest, max_evals = 2000)
+    best_b = fmin(loss_function_b, space, algo=tpe.suggest, max_evals = 2000)
+    total_loss = loss_function_a(space_eval(space, best_a))+loss_function_b(space_eval(space, best_b))
+    return total_loss
+
+
+def norm_model_loss(data):
+    
+    curve = simple_integ(data)
+    
+    def cone_norm_model(mu, variance, scale, contin):
+        x = np.linspace(0, 36, 36)
+        sigma = math.sqrt(variance)
+        cone = stats.norm.pdf(x, mu, sigma)*scale
+        onecone = cone+contin
+        return onecone
+
+
+    def loss_function_c(arg):
+
+        mu, variance, scale, contin= arg
+        onecone = cone_norm_model(mu, variance, scale, contin)
+        loss = 0
+        for i in range(36):
+            loss = loss + abs(curve[i]-onecone[i])
+
+        total_loss = loss.item()
+
+        return total_loss
+
+    def loss_function_d(arg):
+
+        mu, variance, scale, contin= arg
+        onecone = cone_norm_model(mu, variance, scale, contin)
+        loss = 0
+        for i in range(36):
+            loss = loss + abs(curve[i+36]-onecone[i])
+
+        total_loss = loss.item()
+
+        return total_loss
+
+    space_norm = [hp.uniform('mu',0, 36), hp.uniform('variance',0, 36), hp.uniform('scale',0, 100), hp.uniform('contin',0, 10)]
+    best_norm_c = fmin(loss_function_c, space_norm, algo=tpe.suggest, max_evals = 2000)
+    best_norm_d = fmin(loss_function_d, space_norm, algo=tpe.suggest, max_evals = 2000)
+    total_loss = loss_function_c(space_eval(space_norm, best_norm_c))+loss_function_d(space_eval(space_norm, best_norm_d))
+    return total_loss
+
 
 def shell(data):
     try:
@@ -922,8 +1299,10 @@ def shell(data):
 def trial(data):
     try:
         curve = simple_integ(data)
-        result = fft(curve)[2]
-        return data, result
+        yf_abs = abs(fft(curve)[1:30])
+        peak_value = max(yf_abs)
+        peak_index = list(yf_abs).index(peak_value)
+        return data, peak_index+1
     except:
         pass
 
@@ -933,24 +1312,36 @@ def ring_test(data):
         result = ring_integ(data, ring_N=10)
         curve_list = result[1]
         r_re_max = result[2]
-        yf_count = 0
+
+        peak_count = 0
         n = len(curve_list)
 
         for i in np.linspace(0,n-1,n):
+
             yf = fft(curve_list[int(i)])
             yf2 = yf[2]
+
             yf_abs = abs(yf[1:10])
             peak_value = max(yf_abs)
             peak_index = list(yf_abs).index(peak_value)
-            if yf2<=0 and peak_index == 1:
-                yf_count = yf_count + 1
+
+            if yf2 <= 0 and peak_index == 1:
+                peak_count = peak_count + (10**i)
+            else:
+                pass
 
 
-        return (data, yf_count/10, r_re_max)
+        return data, peak_count, r_re_max
 
     except:
         pass
 
-
+def deriv_test(data):
+    try:
+        curve = simple_integ(data)
+        result = deriv_classifier(curve)
+        return data, result
+    except:
+        pass
 
 
