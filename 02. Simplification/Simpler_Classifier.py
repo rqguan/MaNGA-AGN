@@ -4,6 +4,7 @@
 
 
 import copy
+from statistics import mean
 
 import numpy as np
 import scipy as scipy
@@ -17,6 +18,7 @@ import scipy.stats as stats
 from scipy.fft import fft
 #from scipy.stats import wasserstein_distance
 from scipy import ndimage
+from scipy.optimize import leastsq
 
 from marvin.tools import Maps
 from marvin.tools.image import Image
@@ -198,7 +200,7 @@ def ew_integ(data, snr = 3, dphi = 5, cycle = 2, smooth = 2, test = False):
     
     return intp_EW
 
-def simple_integ(data, snr = 3, dphi = 5):
+def simple_integ(data, snr = 3, dphi = 10):
     # check oiii ivar and mask
     # ivar > 1
     # Mask != 1
@@ -236,7 +238,8 @@ def simple_integ(data, snr = 3, dphi = 5):
             else:
                 pass
 
-            
+
+       
     # Intergrate along r direction:
     curve = []
     for k in np.arange(0,360,dphi):
@@ -253,6 +256,66 @@ def simple_integ(data, snr = 3, dphi = 5):
             curve.append(0)
         else:
             curve.append(sum(bins)/len(bins))
+
+    return curve
+
+def simple_median_integ(data, snr = 3, dphi = 10):
+
+    # check oiii ivar and mask
+    # ivar > 1
+    # Mask != 1
+    # OIII flux / flux error > 3
+
+    maps = Maps(data, bintype='SPX', template='MILESHC-MASTARSSP')
+
+    oiii_ew = maps.emline_gew_oiii_5008
+
+    ew_value = oiii_ew.value
+    ew_ivar = oiii_ew.ivar
+    ew_snr = oiii_ew.snr
+    ew_flag = oiii_ew.pixmask.bits
+
+    ew_row = ew_value.shape[0]
+    ew_col = ew_value.shape[1]
+
+    phi = maps.spx_ellcoo_elliptical_azimuth.value
+    #r_re = maps.spx_ellcoo_r_re.value
+
+
+    # Mask the EW  map
+    for i in range(ew_row):
+        for j in range(ew_col):
+            # exclude IVAR = 0: 
+            # https://www.sdss.org/dr17/manga/manga-tutorials/manga-faq/#WhydoyououtputIVAR(inversevariance)insteadoferrors?
+            if ew_ivar[i][j] == 0:
+                ew_value[i][j] = np.nan
+            # exclude S/N < setting
+            elif ew_snr[i][j] <= snr:
+                ew_value[i][j] = np.nan
+            # exclude any flag for spaxel error
+            elif len(ew_flag[i][j]) != 0:
+                ew_value[i][j] = np.nan
+            else:
+                pass
+
+
+       
+    # Intergrate along r direction:
+    curve = []
+    for k in np.arange(0,360,dphi):
+        bins = []
+        for i in range(ew_row):
+            for j in range(ew_col):
+                if phi[i][j] >= k and \
+                    phi[i][j] <= k+dphi and \
+                    np.isnan(ew_value[i][j]) == False:
+                    bins.append(ew_value[i][j])
+                else:
+                    pass
+        if len(bins) == 0:
+            curve.append(0)
+        else:
+            curve.append(np.median(bins))
 
     return curve
 
@@ -941,7 +1004,9 @@ def mask_visual(data, snr = 3, save = True):
 
 def mask_integ_visual(data, snr = 3, save = True):
     
-    dphi = 5
+    # plus plot for Least square fit of Double Gaussian
+    # Curve: take median instead of mean 
+    dphi = 10
 
     fig = plt.figure(figsize=(7, 7))
     
@@ -969,6 +1034,15 @@ def mask_integ_visual(data, snr = 3, save = True):
     #sd = np.std(ew_value)
     mask_value = np.nan
 
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
 
     ivar_map = copy.deepcopy(ew_value)   
     for i in range(ew_row):
@@ -1015,11 +1089,11 @@ def mask_integ_visual(data, snr = 3, save = True):
     for i in range(ew_row):
         for j in range(ew_col):
             if np.isnan(angle_integral[i][j]) == False:
-                if phi[i][j]%20<=5:
+                if phi[i][j]%40<=10:
                     angle_integral[i][j] = 5
-                elif phi[i][j]%20<=10:
+                elif phi[i][j]%40<=20:
                     angle_integral[i][j] = 10
-                elif phi[i][j]%20<=15:
+                elif phi[i][j]%40<=30:
                     angle_integral[i][j] = 15
                 else:
                     angle_integral[i][j] = 20
@@ -1040,13 +1114,22 @@ def mask_integ_visual(data, snr = 3, save = True):
         if len(bins) == 0:
             curve.append(0)
         else:
-            curve.append(sum(bins)/len(bins))
+            curve.append(np.median(bins))
 
-    x = np.linspace(0,len(curve),len(curve))
-    y = curve
-    x2 = np.linspace(0,len(curve),360)
-    f_linear = scipy.interpolate.interp1d(x, y, kind='linear')
-    intp_EW = f_linear(x2)
+
+    origin_curve = np.array(curve)
+    curve = normalize(origin_curve)
+    x = np.arange(0,36,1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,9,2,1,27,2])
+    # [scale1, miu1, sig1, scale2, miu2, sig2]
+    double_fit = double_gaussian(x, fit[0])
 
 
     rows = 3
@@ -1129,19 +1212,34 @@ def mask_integ_visual(data, snr = 3, save = True):
     fig.add_subplot(rows, columns, 7)
     fig.set_figheight(15)
     fig.set_figwidth(15)
-    plt.title("5 Degrees Slices", fontproperties=font)
+    plt.title("10 Degrees Slices", fontproperties=font)
     plt.xlabel('Spexel [arcsec]', fontproperties=font)
     plt.ylabel('Spexel [arcsec]', fontproperties=font)
     plt.imshow(np.flipud(angle_integral), cmap = 'plasma', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
     plt.grid(color='grey', linestyle='-', linewidth=0.2)
 
+    # Plot original curve
     fig.add_subplot(rows, columns, 8)
     fig.set_figheight(15)
     fig.set_figwidth(30)
     plt.title("OIII EW along Angular Direction", fontproperties=font)
     plt.xlabel('Angular Direction [degrees]', fontproperties=font)
     plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
-    plt.plot(intp_EW, label = 'EW curve')
+    plt.plot(np.arange(0,360,10), origin_curve, label = 'EW curve')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+    # Plot Double Gaussian Fit
+    fig.add_subplot(rows, columns, 9)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("phi vs. Normalized OIII EW", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(np.arange(0,360,10), y, label = 'EW curve')
+    plt.plot(np.arange(0,360,10), double_fit, label = 'Double Gaussian Fit')
     plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
     plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
     plt.grid(color='grey', linestyle='-', linewidth=0.2)
@@ -1163,9 +1261,25 @@ def mask_integ_visual(data, snr = 3, save = True):
     else:
         plt.show()
 
-def triangle_model_loss(data):
+def least_square_visual(data):
     
-    curve = Simpler_Classifier.simple_integ(data)
+    result = least_sq_median_fit(data)
+    curve = result[0]
+    model = result[1]
+    para = result[2]
+
+    print(data)
+    print(para)
+    plt.plot(curve, label = 'curve')
+    plt.plot(model, label = 'Double Gaussian Fit')
+    plt.legend()
+    plt.show()
+
+def triangle_model_loss(data, steps = 1000):
+    
+    origin_curve = np.array(simple_integ(data))
+    origin_max = origin_curve.max()
+    curve = list(origin_curve / origin_max)
 
     def cone_model(h, left, right, cont):
 
@@ -1235,15 +1349,16 @@ def triangle_model_loss(data):
         return total_loss
 
     space = [hp.uniform('h',0, 100), hp.randint('left',35), hp.randint('right',35),hp.uniform('cont',0, 3)]
-    best_a = fmin(loss_function_a, space, algo=tpe.suggest, max_evals = 2000)
-    best_b = fmin(loss_function_b, space, algo=tpe.suggest, max_evals = 2000)
+    best_a = fmin(loss_function_a, space, algo=tpe.suggest, max_evals = steps)
+    best_b = fmin(loss_function_b, space, algo=tpe.suggest, max_evals = steps)
     total_loss = loss_function_a(space_eval(space, best_a))+loss_function_b(space_eval(space, best_b))
-    return total_loss
+    return data, total_loss
 
-
-def norm_model_loss(data):
+def norm_model_loss(data, steps = 1000):
     
-    curve = simple_integ(data)
+    origin_curve = np.array(simple_integ(data))
+    origin_max = origin_curve.max()
+    curve = list(origin_curve / origin_max)
     
     def cone_norm_model(mu, variance, scale, contin):
         x = np.linspace(0, 36, 36)
@@ -1277,12 +1392,65 @@ def norm_model_loss(data):
 
         return total_loss
 
-    space_norm = [hp.uniform('mu',0, 36), hp.uniform('variance',0, 36), hp.uniform('scale',0, 100), hp.uniform('contin',0, 10)]
-    best_norm_c = fmin(loss_function_c, space_norm, algo=tpe.suggest, max_evals = 2000)
-    best_norm_d = fmin(loss_function_d, space_norm, algo=tpe.suggest, max_evals = 2000)
+    space_norm = [hp.randint('mu', 36), hp.randint('variance', 36), hp.uniform('scale', 0, 10), hp.uniform('contin',0, 1)]
+    best_norm_c = fmin(loss_function_c, space_norm, algo=tpe.suggest, max_evals = steps)
+    best_norm_d = fmin(loss_function_d, space_norm, algo=tpe.suggest, max_evals = steps)
     total_loss = loss_function_c(space_eval(space_norm, best_norm_c))+loss_function_d(space_eval(space_norm, best_norm_d))
-    return total_loss
 
+    return data, total_loss
+
+def least_sq_fit(data):
+
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
+
+    origin_curve = np.array(simple_integ(data))
+    curve = normalize(origin_curve)
+    x = np.arange(0,36,1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,9,2,1,27,2])
+    double_fit = double_gaussian(x, fit[0])
+    return curve, double_fit
+
+def least_sq_median_fit(data):
+
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
+
+    origin_curve = np.array(simple_median_integ(data))
+    curve = normalize(origin_curve)
+    x = np.arange(0,36,1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,9,2,1,27,2])
+    # [scale1, miu1, sig1, scale2, miu2, sig2]
+    double_fit = double_gaussian(x, fit[0])
+    return curve, double_fit, fit[0]
 
 def shell(data):
     try:
@@ -1336,11 +1504,23 @@ def ring_test(data):
     except:
         pass
 
-def deriv_test(data):
+def fit_test(data):
     try:
-        curve = simple_integ(data)
-        result = deriv_classifier(curve)
-        return data, result
+        result = least_sq_median_fit(data)
+        curve = result[0]
+        fit = result[1]
+        detail = result[2]
+        center_max = max(abs(detail[1]-9), abs(detail[4]-27))
+        scale_min = min((detail[0],detail[3]))
+        sig_max = max((detail[2], detail[5]))
+
+        
+        res = 0
+        for i in range(len(curve)):
+            res = res + abs(curve[i]-fit[i])
+            
+
+        return data, (100 * res/36), center_max, scale_min, sig_max
     except:
         pass
 
