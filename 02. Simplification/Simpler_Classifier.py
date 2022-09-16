@@ -4,7 +4,6 @@
 
 
 import copy
-from statistics import mean
 
 import numpy as np
 import scipy as scipy
@@ -98,6 +97,10 @@ def quality_test(data, snr = 3):
     ratio = data_spaxel / total_spaxel
     
     return data, ratio
+
+# ================================================================================
+# =============================   Integral Methods   =============================
+# ================================================================================
 
 def ew_integ(data, snr = 3, dphi = 5, cycle = 2, smooth = 2, test = False):
     # check oiii ivar and mask
@@ -317,7 +320,79 @@ def simple_median_integ(data, snr = 3, dphi = 10):
         else:
             curve.append(np.median(bins))
 
+    # The following parts are for trial.
+
+    for i in range(len(curve)):
+        if curve[i] == 0:
+            curve[i] = (curve[i-1] + curve[i+1])/2
+        else:
+            pass
+
+    for i in np.arange(1,35,1):
+        curve[i] = np.median([curve[i-1], curve[i], curve[i+1]])
+    curve[0] = np.median([curve[-1],curve[0],curve[1]])
+    curve[-1] = np.median([curve[-2],curve[-1],curve[0]])
+
     return curve
+
+def gaussian_median_integ(data, snr = 3, dphi = 10, smooth=2):
+
+    # check oiii ivar and mask
+    # ivar > 1
+    # Mask != 1
+    # OIII flux / flux error > 3
+
+    maps = Maps(data, bintype='SPX', template='MILESHC-MASTARSSP')
+
+    oiii_ew = maps.emline_gew_oiii_5008
+
+    ew_value = oiii_ew.value
+    ew_ivar = oiii_ew.ivar
+    ew_snr = oiii_ew.snr
+    ew_flag = oiii_ew.pixmask.bits
+
+    ew_row = ew_value.shape[0]
+    ew_col = ew_value.shape[1]
+
+    phi = maps.spx_ellcoo_elliptical_azimuth.value
+    #r_re = maps.spx_ellcoo_r_re.value
+
+    # Mask the EW  map
+    for i in range(ew_row):
+        for j in range(ew_col):
+            # exclude IVAR = 0: 
+            # https://www.sdss.org/dr17/manga/manga-tutorials/manga-faq/#WhydoyououtputIVAR(inversevariance)insteadoferrors?
+            if ew_ivar[i][j] == 0:
+                ew_value[i][j] = np.nan
+            # exclude S/N < setting
+            elif ew_snr[i][j] <= snr:
+                ew_value[i][j] = np.nan
+            # exclude any flag for spaxel error
+            elif len(ew_flag[i][j]) != 0:
+                ew_value[i][j] = np.nan
+            else:
+                pass
+       
+    # Intergrate along r direction:
+    curve = []
+    for k in np.arange(0,360,dphi):
+        bins = []
+        for i in range(ew_row):
+            for j in range(ew_col):
+                if phi[i][j] >= k and \
+                    phi[i][j] <= k+dphi and \
+                    np.isnan(ew_value[i][j]) == False:
+                    bins.append(ew_value[i][j])
+                else:
+                    pass
+        if len(bins) == 0:
+            curve.append(0)
+        else:
+            curve.append(np.median(bins))
+
+    smo_curve = scipy.ndimage.gaussian_filter(curve, sigma = smooth)
+
+    return smo_curve
 
 def ring_integ(data, snr = 3, dphi = 10, ring_N = 5, test = False):
 
@@ -392,6 +467,10 @@ def ring_integ(data, snr = 3, dphi = 10, ring_N = 5, test = False):
     
     return data, curve_list, r_re_max
 
+# ================================================================================
+# =============================   Classifiers   ==================================
+# ================================================================================
+
 def fourier_classifier(EW_curve, n_peak = 5):
     
     # 1. Set curve osillate around  y=0
@@ -459,7 +538,11 @@ def deriv_classifier(EW_curve):
     a4 = sum(fir_deriv[54:71])
 
     return fir_deriv, [a1, a2, a3, a4]
-        
+
+# ================================================================================
+# =============================   Plotting Tools   ===============================
+# ================================================================================
+
 def plot_compared(data, snr = 3, save = True):
     # Plot Image, OIII, Star_v, Gas_v, Curve, FFT. 
     # in a 3X2 subplots
@@ -1116,6 +1199,11 @@ def mask_integ_visual(data, snr = 3, save = True):
         else:
             curve.append(np.median(bins))
 
+    for i in range(len(curve)):
+        if curve[i] == 0:
+            curve[i] = (curve[i-1] + curve[i+1])/2
+        else:
+            pass
 
     origin_curve = np.array(curve)
     curve = normalize(origin_curve)
@@ -1257,9 +1345,541 @@ def mask_integ_visual(data, snr = 3, save = True):
     if save == True:
         plt.savefig(data+'_mask_integ_vis.png', bbox_inches='tight')
         plt.cla()
-        return data
+        return data, data
     else:
         plt.show()
+
+def mask_integ_gaussian_visual(data, snr = 3, smooth = 2, dphi = 10, save = True):
+    
+    # plus plot for Least square fit of Double Gaussian
+    # Curve: take median instead of mean 
+    
+
+    fig = plt.figure(figsize=(7, 7))
+    
+    
+    maps = Maps(data, bintype='SPX', template='MILESHC-MASTARSSP')
+
+
+    oiii_ew = maps.emline_gew_oiii_5008
+
+
+    ew_value = oiii_ew.value
+    ew_ivar = oiii_ew.ivar
+    ew_snr = oiii_ew.snr
+    ew_flag = oiii_ew.pixmask.bits
+
+    ew_row = ew_value.shape[0]
+    ew_col = ew_value.shape[1]
+
+    phi = maps.spx_ellcoo_elliptical_azimuth.value
+
+    x_tik = oiii_ew.shape[0]/4
+    y_tik = oiii_ew.shape[1]/4
+
+    #mean = np.mean(ew_value)
+    #sd = np.std(ew_value)
+    mask_value = np.nan
+
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
+
+    ivar_map = copy.deepcopy(ew_value)   
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                ivar_map[i][j] = mask_value
+            else:
+                pass
+    
+    snr_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_snr[i][j] <= snr:
+                snr_map[i][j] = mask_value
+            else:
+                pass
+
+    flag_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if len(ew_flag[i][j]) != 0:
+                flag_map[i][j] = mask_value
+            else:
+                pass
+
+    comp_map = copy.deepcopy(ew_value)
+
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                comp_map[i][j] = mask_value
+            # exclude S/N < setting
+            elif ew_snr[i][j] <= snr:
+                comp_map[i][j] = mask_value
+            # exclude any flag for spaxel error
+            elif len(ew_flag[i][j]) != 0:
+                comp_map[i][j] = mask_value
+            else:
+                pass
+
+    angle_integral = copy.deepcopy(comp_map)
+
+    # Make the integral angle indicator
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if np.isnan(angle_integral[i][j]) == False:
+                if phi[i][j]%(4*dphi)<=10:
+                    angle_integral[i][j] = 5
+                elif phi[i][j]%(4*dphi)<=20:
+                    angle_integral[i][j] = 10
+                elif phi[i][j]%(4*dphi)<=30:
+                    angle_integral[i][j] = 15
+                else:
+                    angle_integral[i][j] = 20
+            else:
+                pass
+
+    ori_curve = []
+    for k in np.arange(0,360,dphi):
+        bins = []
+        for i in range(ew_row):
+            for j in range(ew_col):
+                if phi[i][j] >= k and \
+                    phi[i][j] <= k+dphi and \
+                    np.isnan(comp_map[i][j]) == False:
+                    bins.append(comp_map[i][j])
+                else:
+                    pass
+        if len(bins) == 0:
+            ori_curve.append(0)
+        else:
+            ori_curve.append(np.median(bins))
+
+    curve = scipy.ndimage.gaussian_filter(ori_curve, sigma = smooth)
+
+    origin_curve = np.array(curve)
+    curve = normalize(origin_curve)
+    x = np.arange(0,int(360/dphi),1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,int(90/dphi),2,1,int(270/dphi),2])
+    # [scale1, miu1, sig1, scale2, miu2, sig2]
+    double_fit = double_gaussian(x, fit[0])
+
+
+    rows = 3
+    columns = 3
+    
+    fig.add_subplot(rows, columns, 1)
+    fig.set_figheight(10)
+    fig.set_figwidth(10)
+    plt.title(str(data)+'Image')
+    im = Image(data)
+    # large_mask[large_mask > 0] = 1
+    im = showImage(plateifu = data)
+    plt.xlabel('Spaxel (arcsec)', fontproperties=font)
+    plt.ylabel('Spaxel (arcsec)', fontproperties=font)
+    plt.imshow(im, interpolation='none',extent=[-25,25,-25,25])
+
+
+    # Plot EW full
+    fig.add_subplot(rows, columns, 4)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)  
+    plt.title("Original EW map", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ew_value), cmap = 'viridis',extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot ivar
+    fig.add_subplot(rows, columns, 2)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)     
+    plt.title("ivar=0 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ivar_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot snr
+    fig.add_subplot(rows, columns, 5)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)        
+    plt.title("SNR<3 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(snr_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    
+    # Plot flag
+    fig.add_subplot(rows, columns, 3)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("Flag mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(flag_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+ 
+    
+    # Plot COMP
+    fig.add_subplot(rows, columns, 6)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("3 masks combined", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(comp_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    # Plot angle indicator
+    fig.add_subplot(rows, columns, 7)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("10 Degrees Slices", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(angle_integral), cmap = 'plasma', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+
+    # Plot original curve
+    fig.add_subplot(rows, columns, 8)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("OIII EW along Angular Direction", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(np.arange(0,360,int(dphi)), origin_curve, label = 'EW curve')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+    # Plot Double Gaussian Fit
+    fig.add_subplot(rows, columns, 9)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("phi vs. Normalized OIII EW", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(np.arange(0,360,int(dphi)), y, label = 'EW curve')
+    plt.plot(np.arange(0,360,int(dphi)), double_fit, label = 'Double Gaussian Fit')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+
+    plt.subplots_adjust(left=0.1,
+                    bottom=0.1, 
+                    right=1.0, 
+                    top=1.2, 
+                    wspace=0.2, 
+                    hspace=0.2)
+    
+
+    if save == True:
+        plt.savefig(data+'_mask_integ_vis.png', bbox_inches='tight')
+        plt.cla()
+        return data, data
+    else:
+        plt.show()
+
+def mask_integ_visual_trial(data, snr = 3, save = True):
+    
+    # plus plot for Least square fit of Double Gaussian
+    # Curve: take median instead of mean 
+    dphi = 10
+
+    fig = plt.figure(figsize=(7, 7))
+    
+    
+    maps = Maps(data, bintype='SPX', template='MILESHC-MASTARSSP')
+
+
+    oiii_ew = maps.emline_gew_oiii_5008
+
+
+    ew_value = oiii_ew.value
+    ew_ivar = oiii_ew.ivar
+    ew_snr = oiii_ew.snr
+    ew_flag = oiii_ew.pixmask.bits
+
+    ew_row = ew_value.shape[0]
+    ew_col = ew_value.shape[1]
+
+    phi = maps.spx_ellcoo_elliptical_azimuth.value
+
+    x_tik = oiii_ew.shape[0]/4
+    y_tik = oiii_ew.shape[1]/4
+
+    #mean = np.mean(ew_value)
+    #sd = np.std(ew_value)
+    mask_value = np.nan
+
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
+
+    ivar_map = copy.deepcopy(ew_value)   
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                ivar_map[i][j] = mask_value
+            else:
+                pass
+    
+    snr_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_snr[i][j] <= snr:
+                snr_map[i][j] = mask_value
+            else:
+                pass
+
+    flag_map = copy.deepcopy(ew_value)
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if len(ew_flag[i][j]) != 0:
+                flag_map[i][j] = mask_value
+            else:
+                pass
+
+    comp_map = copy.deepcopy(ew_value)
+
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if ew_ivar[i][j] == 0:
+                comp_map[i][j] = mask_value
+            # exclude S/N < setting
+            elif ew_snr[i][j] <= snr:
+                comp_map[i][j] = mask_value
+            # exclude any flag for spaxel error
+            elif len(ew_flag[i][j]) != 0:
+                comp_map[i][j] = mask_value
+            else:
+                pass
+
+    angle_integral = copy.deepcopy(comp_map)
+
+    # Make the integral angle indicator
+    for i in range(ew_row):
+        for j in range(ew_col):
+            if np.isnan(angle_integral[i][j]) == False:
+                if phi[i][j]%40<=10:
+                    angle_integral[i][j] = 5
+                elif phi[i][j]%40<=20:
+                    angle_integral[i][j] = 10
+                elif phi[i][j]%40<=30:
+                    angle_integral[i][j] = 15
+                else:
+                    angle_integral[i][j] = 20
+            else:
+                pass
+
+    curve = []
+    for k in np.arange(0,360,dphi):
+        bins = []
+        for i in range(ew_row):
+            for j in range(ew_col):
+                if phi[i][j] >= k and \
+                    phi[i][j] <= k+dphi and \
+                    np.isnan(comp_map[i][j]) == False:
+                    bins.append(comp_map[i][j])
+                else:
+                    pass
+        if len(bins) == 0:
+            curve.append(0)
+        else:
+            curve.append(np.median(bins))
+
+    for i in range(len(curve)):
+        if curve[i] == 0:
+            curve[i] = (curve[i-1] + curve[i+1])/2
+        else:
+            pass
+
+    noisy_curve = copy.deepcopy(curve)
+
+    for i in np.arange(1,35,1):
+        curve[i] = np.median([curve[i-1], curve[i], curve[i+1]])
+    curve[0] = np.median([curve[-1],curve[0],curve[1]])
+    curve[-1] = np.median([curve[-2],curve[-1],curve[0]])
+
+    origin_curve = np.array(curve)
+    curve = normalize(origin_curve)
+    x = np.arange(0,36,1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,9,2,1,27,2])
+    # [scale1, miu1, sig1, scale2, miu2, sig2]
+    double_fit = double_gaussian(x, fit[0])
+
+
+    rows = 3
+    columns = 3
+    
+    fig.add_subplot(rows, columns, 1)
+    fig.set_figheight(10)
+    fig.set_figwidth(10)
+    plt.title(str(data)+'Image')
+    im = Image(data)
+    # large_mask[large_mask > 0] = 1
+    im = showImage(plateifu = data)
+    plt.xlabel('Spaxel (arcsec)', fontproperties=font)
+    plt.ylabel('Spaxel (arcsec)', fontproperties=font)
+    plt.imshow(im, interpolation='none',extent=[-25,25,-25,25])
+
+
+    # Plot EW full
+    fig.add_subplot(rows, columns, 4)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)  
+    plt.title("Original EW map", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ew_value), cmap = 'viridis',extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot ivar
+    fig.add_subplot(rows, columns, 2)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)     
+    plt.title("ivar=0 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(ivar_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+
+
+    # Plot snr
+    fig.add_subplot(rows, columns, 5)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)        
+    plt.title("SNR<3 mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(snr_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    
+    # Plot flag
+    fig.add_subplot(rows, columns, 3)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("Flag mask", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(flag_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+ 
+    
+    # Plot COMP
+    fig.add_subplot(rows, columns, 6)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("3 masks combined", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(comp_map), cmap = 'viridis', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.colorbar(label = r'$\AA$')
+
+    # Plot angle indicator
+    fig.add_subplot(rows, columns, 7)
+    fig.set_figheight(15)
+    fig.set_figwidth(15)
+    plt.title("10 Degrees Slices", fontproperties=font)
+    plt.xlabel('Spexel [arcsec]', fontproperties=font)
+    plt.ylabel('Spexel [arcsec]', fontproperties=font)
+    plt.imshow(np.flipud(angle_integral), cmap = 'plasma', extent=[-1*x_tik, x_tik, -1*y_tik, y_tik])
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+
+    # Plot original curve
+    fig.add_subplot(rows, columns, 8)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("OIII EW along Angular Direction", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(np.arange(0,360,10), noisy_curve, label = 'EW curve')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+    # Plot Double Gaussian Fit
+    fig.add_subplot(rows, columns, 9)
+    fig.set_figheight(15)
+    fig.set_figwidth(30)
+    plt.title("phi vs. Normalized OIII EW", fontproperties=font)
+    plt.xlabel('Angular Direction [degrees]', fontproperties=font)
+    plt.ylabel('EW/spaxel [Angstrom]', fontproperties=font)
+    plt.plot(np.arange(0,360,10), y, label = 'EW curve')
+    plt.plot(np.arange(0,360,10), double_fit, label = 'Double Gaussian Fit')
+    plt.axvline(x = 90, linestyle = '--', color = 'r',label = r'90$\degree$')
+    plt.axvline(x = 270, linestyle = '--', color = 'r',label = r'270$\degree$')
+    plt.grid(color='grey', linestyle='-', linewidth=0.2)
+    plt.legend(loc='upper right',prop=font)
+
+
+    plt.subplots_adjust(left=0.1,
+                    bottom=0.1, 
+                    right=1.0, 
+                    top=1.2, 
+                    wspace=0.2, 
+                    hspace=0.2)
+    
+
+    if save == True:
+        plt.savefig(data+'_mask_integ_vis.png', bbox_inches='tight')
+        plt.cla()
+        return data, data
+    else:
+        plt.show()
+
 
 def least_square_visual(data):
     
@@ -1274,6 +1894,10 @@ def least_square_visual(data):
     plt.plot(model, label = 'Double Gaussian Fit')
     plt.legend()
     plt.show()
+
+# ================================================================================
+# =============================   Loss Functions   ===============================
+# ================================================================================
 
 def triangle_model_loss(data, steps = 1000):
     
@@ -1452,6 +2076,46 @@ def least_sq_median_fit(data):
     double_fit = double_gaussian(x, fit[0])
     return curve, double_fit, fit[0]
 
+def gaussian_lsm_fit(data):
+
+    def double_gaussian( x, params ):
+        (c1, mu1, sigma1, c2, mu2, sigma2) = params
+        res =   c1 * np.exp( - (x - mu1)**2.0 / (2.0 * sigma1**2.0) ) \
+            + c2 * np.exp( - (x - mu2)**2.0 / (2.0 * sigma2**2.0) )
+        return res
+
+    def double_gaussian_fit( params ):
+        fit = double_gaussian( x, params )
+        return (fit - y_proc)
+
+    origin_curve = np.array(gaussian_median_integ(data))
+    curve = normalize(origin_curve)
+    x = np.arange(0,36,1)
+    y = np.array(curve)
+    # Remove background.
+    #base = np.mean([y[0],y[1],y[17],y[-1],y[-2]])
+    y_proc = np.copy(y)
+    y_proc[y_proc < 0] = 0
+
+    # Least squares fit. Starting values found by inspection.
+    fit = leastsq(double_gaussian_fit, [1,9,2,1,27,2])
+    # [scale1, miu1, sig1, scale2, miu2, sig2]
+    double_fit = double_gaussian(x, fit[0])
+    return curve, double_fit, fit[0]
+
+def reduced_chi_square(data, dof = 6):
+    result = least_sq_median_fit(data)
+    curve = np.array(result[0])
+    n_curve = curve / sum(curve)
+    fit = result[1]
+    n_fit = fit / sum(fit)
+    chi_square = scipy.stats.chisquare(n_curve, f_exp =n_fit, ddof = dof)
+    return data, chi_square[0], chi_square[1]
+
+# =====================================================================================
+# =============================   Multiprocessing Units   =============================
+# =====================================================================================
+
 def shell(data):
     try:
         curve = ew_integ(data)
@@ -1524,4 +2188,32 @@ def fit_test(data):
     except:
         pass
 
+def gaussian_test(data):
+    try:
+        result = gaussian_lsm_fit(data)
+        curve = result[0]
+        fit = result[1]
+        detail = result[2]
+        center_max = max(abs(detail[1]-9), abs(detail[4]-27))
+        scale_min = min((detail[0],detail[3]))
+        sig_max = max((detail[2], detail[5]))
 
+        
+        res = 0
+        for i in range(len(curve)):
+            res = res + abs(curve[i]-fit[i])
+            
+
+        return data, scale_min, center_max, sig_max, (100 * res/36)
+    except:
+        pass
+
+
+def chi_shell(data):
+    try:
+        result = reduced_chi_square(data)
+
+        return result[0], result[1], result[2]
+
+    except:
+        pass
